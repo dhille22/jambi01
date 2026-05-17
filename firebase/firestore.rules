@@ -1,0 +1,37 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function validReportPayload() {
+      return request.resource.data.keys().hasAll([
+        'userId',
+        'category',
+        'confidence',
+        'latitude',
+        'longitude',
+        'imageUrl',
+        'createdAt',
+        'status',
+        'classification',
+        'embedding'
+      ])
+      && request.resource.data.userId == request.auth.uid
+      && request.resource.data.latitude is number
+      && request.resource.data.longitude is number
+      && request.resource.data.confidence is number;
+    }
+
+    match /reports/{reportId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && validReportPayload();
+      allow update: if signedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId;
+      allow delete: if false;
+    }
+  }
+}

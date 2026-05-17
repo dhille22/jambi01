@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "406778028360",
+    "project_id": "laporjambi01",
+    "storage_bucket": "laporjambi01.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:406778028360:android:a787c3ad52f473b4f0d37d",
+        "android_client_info": {
+          "package_name": "id.go.jambikota.crowdreport"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAHIFiOQmTho2R4Qx8P5ddqfgM8OIKr9eY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

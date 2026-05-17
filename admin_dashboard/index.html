@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Lapor Jambi</title>
+    
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- Leaflet Map CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="dashboard">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Lapor Jambi</h2>
+                <span class="badge">Admin Panel</span>
+            </div>
+            <nav class="nav-links">
+                <a href="#" class="active" id="nav-reports">📝 Daftar Laporan</a>
+                <a href="#" id="nav-map">🗺️ Peta Kota Jambi</a>
+            </nav>
+            <div class="sidebar-footer">
+                <p>Status: <span class="status-indicator online"></span> Online</p>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-header">
+                <h1>Kelola Laporan Masyarakat</h1>
+                <div class="header-actions">
+                    <button id="refresh-btn" class="btn-glass">🔄 Refresh Data</button>
+                </div>
+            </header>
+
+            <div id="reports-view" class="view-section active">
+                <div class="stats-container">
+                    <div class="stat-card">
+                        <h3>Total Laporan</h3>
+                        <p id="stat-total">0</p>
+                    </div>
+                    <div class="stat-card warning">
+                        <h3>Menunggu (Pending)</h3>
+                        <p id="stat-pending">0</p>
+                    </div>
+                    <div class="stat-card success">
+                        <h3>Selesai Diperbaiki</h3>
+                        <p id="stat-completed">0</p>
+                    </div>
+                </div>
+
+                <div class="reports-grid" id="reports-container">
+                    <!-- Cards will be injected here via JS -->
+                    <div class="loading-state">Mengambil data dari server...</div>
+                </div>
+            </div>
+
+            <div id="map-view" class="view-section">
+                <div class="map-container" id="admin-map"></div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modal for viewing Image -->
+    <div id="image-modal" class="modal">
+        <span class="close-modal">&times;</span>
+        <img class="modal-content" id="modal-img">
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+lubang_jalan
+drainase_rusak
+penerangan_rusak
+trotoar_rusak
+sampah_menumpuk
