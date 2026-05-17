@@ -8,6 +8,7 @@ import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:image/image.dart' as img;
 
 import '../core/app_constants.dart';
+import '../core/secrets.dart';
 import '../models/classification_result.dart';
 
 class CaptureMetadataValidation {
@@ -38,8 +39,8 @@ class ImageClassificationService {
       return;
     }
 
-    // API Key di-hardcode agar praktis saat di-run dari VS Code langsung
-    const apiKey = 'AIzaSyBhI458Z6oWQbnwb0hnR_jfJg_Hf5HAC9o';
+    // Mengambil API Key dari file secrets.dart yang diabaikan oleh Git
+    const apiKey = AppSecrets.geminiApiKey;
     
     if (apiKey.isNotEmpty) {
       _model = GenerativeModel(

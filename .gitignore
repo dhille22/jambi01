@@ -54,3 +54,6 @@ __pycache__/
 *.tflite
 venv/
 .env
+
+# API Keys
+lib/core/secrets.dart
