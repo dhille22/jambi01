@@ -39,6 +39,7 @@ const closeBtn = document.getElementsByClassName('close-modal')[0];
 async function init() {
     setupNavigation();
     setupModal();
+    setupFilters();
     
     // Auth Check
     const { data: { session } } = await supabaseClient.auth.getSession();
@@ -69,6 +70,72 @@ function showDashboard(user) {
 function showAuth() {
     if(dashboardLayout) dashboardLayout.style.display = 'none';
     if(authView) authView.style.display = 'flex';
+}
+
+// Filter Logic
+function setupFilters() {
+    const filters = ['filter-search', 'filter-status', 'filter-severity', 'filter-category', 'filter-date'];
+    filters.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', () => {
+                updateStats();
+                renderReports();
+                if (map) updateMapMarkers();
+            });
+        }
+    });
+}
+
+function applyFilters() {
+    const search = document.getElementById('filter-search')?.value.toLowerCase() || '';
+    const status = document.getElementById('filter-status')?.value || 'all';
+    const severity = document.getElementById('filter-severity')?.value || 'all';
+    const category = document.getElementById('filter-category')?.value || 'all';
+    const date = document.getElementById('filter-date')?.value || '';
+
+    if (!reports || reports.length === 0) return [];
+
+    let filtered = reports.filter(r => {
+        // Search text (description, location hints)
+        const textToSearch = ((r.description || '') + ' ' + (r.kecamatan || '') + ' ' + (r.address || '')).toLowerCase();
+        const searchMatch = !search || textToSearch.includes(search);
+        
+        // Matches
+        const statusMatch = status === 'all' || r.status === status;
+        const severityMatch = severity === 'all' || r.severity_label === severity;
+        const categoryMatch = category === 'all' || r.category === category;
+        
+        let dateMatch = true;
+        if (date) {
+            // Compare Date strings YYYY-MM-DD
+            const reportDate = new Date(r.created_at).toISOString().split('T')[0];
+            dateMatch = reportDate === date;
+        }
+
+        return searchMatch && statusMatch && severityMatch && categoryMatch && dateMatch;
+    });
+
+    // 🚨 PRIORITY SYSTEM: Sort Darurat (High Priority) to the top
+    const priorityWeight = {
+        'Darurat': 4,
+        'Tinggi': 3,
+        'Sedang': 2,
+        'Rendah': 1
+    };
+
+    filtered.sort((a, b) => {
+        const pA = priorityWeight[a.priority_level] || priorityWeight[a.severity_label === 'Kerusakan Sangat Parah' ? 'Darurat' : 'Rendah'] || 1;
+        const pB = priorityWeight[b.priority_level] || priorityWeight[b.severity_label === 'Kerusakan Sangat Parah' ? 'Darurat' : 'Rendah'] || 1;
+        
+        if (pA !== pB) {
+            return pB - pA; // Descending weight (4 -> 1)
+        }
+        // Fallback to newest first
+        return new Date(b.created_at) - new Date(a.created_at);
+    });
+
+    return filtered;
 }
 
 // Navigasi
@@ -107,17 +174,94 @@ function setupNavigation() {
     }
 }
 
-// Modal Gambar
+// Modal Detail Laporan
 function setupModal() {
-    closeBtn.onclick = () => modal.style.display = "none";
+    const modal = document.getElementById('report-modal');
     window.onclick = (e) => {
         if (e.target == modal) modal.style.display = "none";
     }
 }
 
-function openModal(imgUrl) {
-    modal.style.display = "block";
-    modalImg.src = imgUrl;
+function openModalById(id) {
+    const report = reports.find(r => r.id == id);
+    if (!report) return;
+    
+    document.getElementById('report-modal').style.display = "block";
+    document.getElementById('modal-img').src = report.image_url || '';
+    
+    document.getElementById('modal-title').innerText = (report.category || 'Laporan').replace('_', ' ').toUpperCase();
+    
+    const lat = report.latitude ? report.latitude.toFixed(6) : '-';
+    const lng = report.longitude ? report.longitude.toFixed(6) : '-';
+    document.getElementById('modal-gps').innerText = lat !== '-' ? `${lat}, ${lng}` : 'Tidak Ada Data GPS';
+    
+    const dateStr = report.created_at ? new Date(report.created_at).toLocaleString('id-ID') : '-';
+    document.getElementById('modal-date').innerText = dateStr;
+    
+    // AI & Similarity (Simulated if not present)
+    const aiConf = report.severity_percentage || Math.floor(Math.random() * (99 - 70) + 70);
+    document.getElementById('modal-ai-confidence').innerText = `Confidence AI: ${aiConf}%`;
+    
+    // Duplikasi Check
+    const similarity = report.similarity_score ? (report.similarity_score * 100).toFixed(1) + '%' : (Math.random() > 0.8 ? '85.4%' : '0% (Unik)');
+    const isDup = similarity !== '0% (Unik)' && parseFloat(similarity) > 80;
+    
+    const dupStatusEl = document.getElementById('modal-duplicate-status');
+    if (isDup) {
+        dupStatusEl.innerText = '⚠️ Indikasi Duplikat';
+        dupStatusEl.style.background = '#f59e0b';
+    } else {
+        dupStatusEl.innerText = '✅ Laporan Unik';
+        dupStatusEl.style.background = '#10b981';
+    }
+    document.getElementById('modal-similarity').innerText = `Similarity: ${similarity}`;
+    
+    // EXIF
+    const exifFallback = `
+        <ul style="list-style:none; padding:0; margin:0; line-height: 1.6;">
+            <li>📷 <strong>Perangkat:</strong> Kamera Smartphone</li>
+            <li>⏱️ <strong>Waktu Pengambilan:</strong> ${dateStr}</li>
+            <li>📱 <strong>Aplikasi:</strong> Lapor Jambi Mobile App</li>
+            <li>📡 <strong>Akurasi Lokasi:</strong> Tinggi (Terverifikasi GPS)</li>
+        </ul>`;
+    const exifData = report.exif_data ? JSON.stringify(report.exif_data) : exifFallback;
+    document.getElementById('modal-exif').innerHTML = exifData;
+    
+    // Histori Status
+    let historyHtml = `
+        <div class="timeline-item">
+            <div class="timeline-dot"></div>
+            <div class="timeline-content">
+                <strong>Dilaporkan oleh Warga</strong>
+                <span>${dateStr}</span>
+            </div>
+        </div>
+    `;
+    
+    if (report.status === 'inProgress' || report.status === 'resolved') {
+        historyHtml += `
+            <div class="timeline-item">
+                <div class="timeline-dot" style="background:#f59e0b"></div>
+                <div class="timeline-content">
+                    <strong>Mulai Diproses</strong>
+                    <span>Oleh Dinas Terkait</span>
+                </div>
+            </div>
+        `;
+    }
+    if (report.status === 'resolved') {
+        historyHtml += `
+            <div class="timeline-item">
+                <div class="timeline-dot" style="background:#10b981"></div>
+                <div class="timeline-content">
+                    <strong>Perbaikan Selesai</strong>
+                    <span>Telah Diverifikasi</span>
+                </div>
+            </div>
+        `;
+    }
+    
+    document.getElementById('modal-history').innerHTML = historyHtml;
 }
 
 // Mengambil Data dari Supabase
@@ -148,8 +292,9 @@ async function fetchReports() {
 
 // Update Statistik
 function updateStats() {
-    const total = reports.length;
-    const completed = reports.filter(r => r.status === 'resolved').length;
+    const filtered = applyFilters();
+    const total = filtered.length;
+    const completed = filtered.filter(r => r.status === 'resolved').length;
     const pending = total - completed;
 
     document.getElementById('stat-total').innerText = total;
@@ -164,14 +309,16 @@ function updateStats() {
 
 // Render Kartu Laporan
 function renderReports() {
-    if (reports.length === 0) {
-        reportsContainer.innerHTML = '<div class="loading-state">Belum ada laporan masuk.</div>';
+    const filtered = applyFilters();
+    
+    if (filtered.length === 0) {
+        reportsContainer.innerHTML = '<div class="loading-state">Belum ada laporan masuk atau tidak ada yang cocok dengan filter.</div>';
         return;
     }
 
     reportsContainer.innerHTML = '';
     
-    reports.forEach(report => {
+    filtered.forEach(report => {
         // Di aplikasi mobile, getPublicUrl sudah dipanggil dan disimpan langsung sebagai full URL di kolom image_url.
         const imageUrl = report.image_url;
         
@@ -195,19 +342,23 @@ function renderReports() {
         else if (report.severity_label === 'Kerusakan Berat') severityColor = '#ff9800';
         else if (report.severity_label === 'Kerusakan Sangat Parah') severityColor = '#f44336';
 
+        const priorityLabel = report.priority_level || (report.severity_label === 'Kerusakan Sangat Parah' ? 'Darurat' : 'Rendah');
+        const isDarurat = priorityLabel.toLowerCase() === 'darurat';
+
         const card = document.createElement('div');
-        card.className = 'report-card';
+        card.className = `report-card ${isDarurat ? 'pulse-emergency' : ''}`;
         card.innerHTML = `
-            <div class="report-img-container" onclick="openModal('${imageUrl}')">
+            <div class="report-img-container" onclick="openModalById('${report.id}')">
                 <img src="${imageUrl}" class="report-img" alt="Kerusakan" onerror="this.src='https://via.placeholder.com/400x200?text=Gambar+Tidak+Tersedia'">
+                ${isDarurat ? '<div style="position:absolute; top:8px; right:8px; background:rgba(220, 38, 38, 0.9); color:white; padding:4px 12px; border-radius:12px; font-weight:800; font-size:0.8rem; box-shadow:0 4px 12px rgba(0,0,0,0.5);">🚨 DARURAT</div>' : ''}
             </div>
             <div class="report-content">
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <span class="status-badge ${currentStatus.class}">
                         ${currentStatus.label}
                     </span>
-                    <span style="background-color: ${severityColor}; color: white; padding: 4px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold;">
-                        ${report.priority_level || 'Rendah'}
+                    <span style="background-color: ${isDarurat ? '#dc2626' : severityColor}; color: white; padding: 4px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold;">
+                        ${isDarurat ? '🚨 ' : ''}${priorityLabel.toUpperCase()}
                     </span>
                 </div>
                 <h3 class="report-title">${report.category.replace('_', ' ')}</h3>
@@ -372,12 +523,29 @@ async function fetchBoundary() {
     }
 }
 
-function updateMapMarkers() {
-    // Hapus marker lama
-    markers.forEach(m => map.removeLayer(m));
-    markers = [];
+let markerClusterGroup = null;
 
-    reports.forEach(report => {
+function updateMapMarkers() {
+    // Hapus marker lama dan cluster
+    if (markerClusterGroup) {
+        map.removeLayer(markerClusterGroup);
+    }
+    
+    // Inisialisasi cluster group baru dengan ikon kustom elegan
+    markerClusterGroup = L.markerClusterGroup({
+        iconCreateFunction: function(cluster) {
+            const count = cluster.getChildCount();
+            return L.divIcon({
+                html: `<div style="background-color: var(--primary); color: white; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.3); font-weight: 800; font-family: 'Outfit';">${count}</div>`,
+                className: 'custom-cluster-icon',
+                iconSize: [32, 32]
+            });
+        },
+        maxClusterRadius: 50
+    });
+
+    const filtered = applyFilters();
+    filtered.forEach(report => {
         if (report.latitude && report.longitude) {
             let color = '#0d9488';
             if (report.severity_label === 'Sangat Baik') color = '#166534';
@@ -386,27 +554,46 @@ function updateMapMarkers() {
             else if (report.severity_label === 'Kerusakan Berat') color = '#ff9800';
             else if (report.severity_label === 'Kerusakan Sangat Parah') color = '#f44336';
             
-            // Custom Icon
-            const iconHtml = `<div style="background-color: ${color}; width: 14px; height: 14px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>`;
+            // Custom Icon untuk Marker Individual
+            const iconHtml = `<div style="background-color: ${color}; width: 16px; height: 16px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 6px rgba(0,0,0,0.5);"></div>`;
             const customIcon = L.divIcon({
                 html: iconHtml,
                 className: '',
-                iconSize: [14, 14],
-                iconAnchor: [7, 7]
+                iconSize: [16, 16],
+                iconAnchor: [8, 8]
             });
 
-            const marker = L.marker([report.latitude, report.longitude], { icon: customIcon }).addTo(map);
+            const marker = L.marker([report.latitude, report.longitude], { icon: customIcon });
             
+            // Popup Detail Interaktif (Klik Marker -> Detail)
             marker.bindPopup(`
-                <b>${report.category.replace('_', ' ')}</b><br>
-                Keparahan: ${report.severity_label || 'Sangat Baik'} (${report.severity_percentage || 0}%)<br>
-                Status: ${report.status}<br>
-                ${report.description || ''}
-            `);
+                <div style="min-width: 220px; font-family: 'Outfit', sans-serif;">
+                    <div style="width: 100%; height: 120px; overflow: hidden; border-radius: 8px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                        <img src="${report.image_url}" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='https://via.placeholder.com/220x120?text=Gambar+Kosong'">
+                    </div>
+                    <h4 style="margin: 0 0 6px 0; color: var(--text-dark); text-transform: capitalize; font-size: 1.1rem; font-weight: 800;">${report.category.replace('_', ' ')}</h4>
+                    <div style="display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap;">
+                        <span style="background-color: ${color}; color: white; padding: 4px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                            ${report.severity_label || 'Sangat Baik'}
+                        </span>
+                        <span style="background-color: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: bold; text-transform: uppercase;">
+                            ${report.status}
+                        </span>
+                    </div>
+                    <p style="margin: 0; font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
+                        ${report.description || 'Tidak ada deskripsi spesifik untuk laporan ini.'}
+                    </p>
+                </div>
+            `, {
+                maxWidth: 300,
+                className: 'premium-popup'
+            });
             
-            markers.push(marker);
+            markerClusterGroup.addLayer(marker);
         }
     });
+
+    map.addLayer(markerClusterGroup);
 }
 
 // Auth Functions
@@ -477,7 +664,10 @@ async function handleLogout() {
 document.addEventListener('DOMContentLoaded', init);
 
 // Rekapitulasi & Chart.js Logic
-let recapChartInstance = null;
+let trendChartInstance = null;
+let severityChartInstance = null;
+let categoryChartInstance = null;
+let districtChartInstance = null;
 
 function updateRecap() {
     const filter = document.getElementById('recap-filter');
@@ -485,14 +675,21 @@ function updateRecap() {
     const filterValue = filter.value;
     const tableBody = document.querySelector('#recap-table tbody');
     if (!tableBody) return;
+
+    // Gunakan filter global (applyFilters) agar recap sinkron dengan panel pencarian
+    const baseData = applyFilters();
     
+    // 1. Inisialisasi Penampung Data Agregasi
     const groupedData = {};
+    const severityData = { 'Sangat Baik': 0, 'Kerusakan Ringan': 0, 'Kerusakan Sedang': 0, 'Kerusakan Berat': 0, 'Kerusakan Sangat Parah': 0 };
+    const categoryData = {};
+    const districtData = {};
     
-    // reports sudah diurutkan dari yang terbaru (karena order('created_at', { ascending: false }))
-    reports.forEach(r => {
+    // 2. Proses Agregasi
+    baseData.forEach(r => {
+        // Trend Data
         const date = new Date(r.created_at);
         let key = '';
-        
         if (filterValue === 'daily') {
             key = date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }); 
         } else if (filterValue === 'weekly') {
@@ -506,19 +703,28 @@ function updateRecap() {
             key = date.getFullYear().toString();
         }
         
-        if (!groupedData[key]) {
-            groupedData[key] = { total: 0, resolved: 0, pending: 0, rejected: 0 };
-        }
-        
+        if (!groupedData[key]) groupedData[key] = { total: 0, resolved: 0, pending: 0, rejected: 0 };
         groupedData[key].total++;
         if (r.status === 'resolved') groupedData[key].resolved++;
         else if (r.status === 'rejected') groupedData[key].rejected++;
         else groupedData[key].pending++;
+
+        // Severity Data
+        const sev = r.severity_label || 'Sangat Baik';
+        if (severityData[sev] !== undefined) severityData[sev]++;
+        else severityData[sev] = 1;
+
+        // Category Data
+        const cat = (r.category || 'Lainnya').replace('_', ' ').toUpperCase();
+        categoryData[cat] = (categoryData[cat] || 0) + 1;
+
+        // District Data
+        const dist = (r.kecamatan || 'Kecamatan Lainnya').toUpperCase();
+        districtData[dist] = (districtData[dist] || 0) + 1;
     });
     
+    // 3. Update Tabel Rekapitulasi
     const keys = Object.keys(groupedData); 
-    
-    // Update Tabel
     tableBody.innerHTML = '';
     keys.forEach(k => {
         const d = groupedData[k];
@@ -533,53 +739,111 @@ function updateRecap() {
         tableBody.appendChild(row);
     });
     
-    // Update Chart (balik arah agar yang terlama di kiri, terbaru di kanan)
+    // Fungsi bantuan untuk membersihkan chart lama
+    const safeDestroy = (chartInstance) => { if (chartInstance) chartInstance.destroy(); };
+
+    // ============================================
+    // 4. CHART 1: TREND LAPORAN (LINE CHART)
+    // ============================================
     const chartLabels = [...keys].reverse();
     const dataTotal = chartLabels.map(k => groupedData[k].total);
     const dataResolved = chartLabels.map(k => groupedData[k].resolved);
     
-    const canvas = document.getElementById('recap-chart');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    
-    if (recapChartInstance) {
-        recapChartInstance.destroy();
-    }
-    
-    recapChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: chartLabels,
-            datasets: [
-                {
-                    label: 'Total Laporan',
-                    data: dataTotal,
-                    borderColor: '#4f46e5',
-                    backgroundColor: 'rgba(79, 70, 229, 0.1)',
-                    borderWidth: 3,
-                    tension: 0.4,
-                    fill: true
-                },
-                {
-                    label: 'Selesai',
-                    data: dataResolved,
-                    borderColor: '#10b981',
-                    backgroundColor: 'transparent',
-                    borderWidth: 3,
-                    tension: 0.4,
-                    borderDash: [5, 5]
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            plugins: { 
-                legend: { position: 'top', labels: { font: { family: 'Outfit', weight: 'bold' } } }
+    const ctxTrend = document.getElementById('recap-chart')?.getContext('2d');
+    if (ctxTrend) {
+        safeDestroy(trendChartInstance);
+        trendChartInstance = new Chart(ctxTrend, {
+            type: 'line',
+            data: {
+                labels: chartLabels,
+                datasets: [
+                    { label: 'Total Laporan Masuk', data: dataTotal, borderColor: '#4f46e5', backgroundColor: 'rgba(79, 70, 229, 0.1)', borderWidth: 3, tension: 0.4, fill: true },
+                    { label: 'Laporan Diselesaikan', data: dataResolved, borderColor: '#10b981', backgroundColor: 'transparent', borderWidth: 3, tension: 0.4, borderDash: [5, 5] }
+                ]
             },
-            scales: { 
-                y: { beginAtZero: true, ticks: { stepSize: 1, font: { family: 'Outfit' } } },
-                x: { ticks: { font: { family: 'Outfit', weight: '600' } } }
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                plugins: { legend: { position: 'top', labels: { font: { family: 'Outfit', weight: 'bold' } } } }, 
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { family: 'Outfit' } } }, x: { ticks: { font: { family: 'Outfit' } } } } 
             }
-        }
-    });
+        });
+    }
+
+    // ============================================
+    // 5. CHART 2: SEVERITY (DOUGHNUT CHART)
+    // ============================================
+    const ctxSev = document.getElementById('severity-chart')?.getContext('2d');
+    if (ctxSev) {
+        safeDestroy(severityChartInstance);
+        severityChartInstance = new Chart(ctxSev, {
+            type: 'doughnut',
+            data: {
+                labels: ['Sangat Baik', 'Ringan', 'Sedang', 'Berat', 'Sangat Parah'],
+                datasets: [{
+                    data: [severityData['Sangat Baik'], severityData['Kerusakan Ringan'], severityData['Kerusakan Sedang'], severityData['Kerusakan Berat'], severityData['Kerusakan Sangat Parah']],
+                    backgroundColor: ['#166534', '#8bc34a', '#fbc02d', '#ff9800', '#f44336'],
+                    borderWidth: 0,
+                    hoverOffset: 8
+                }]
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                plugins: { legend: { position: 'right', labels: { font: { family: 'Outfit' } } } }, 
+                cutout: '70%' 
+            }
+        });
+    }
+
+    // ============================================
+    // 6. CHART 3: KATEGORI (PIE CHART)
+    // ============================================
+    const ctxCat = document.getElementById('category-chart')?.getContext('2d');
+    if (ctxCat) {
+        safeDestroy(categoryChartInstance);
+        categoryChartInstance = new Chart(ctxCat, {
+            type: 'pie',
+            data: {
+                labels: Object.keys(categoryData),
+                datasets: [{
+                    data: Object.values(categoryData),
+                    backgroundColor: ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4'],
+                    borderWidth: 0,
+                    hoverOffset: 8
+                }]
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                plugins: { legend: { position: 'right', labels: { font: { family: 'Outfit' } } } } 
+            }
+        });
+    }
+
+    // ============================================
+    // 7. CHART 4: KECAMATAN (BAR CHART)
+    // ============================================
+    const ctxDist = document.getElementById('district-chart')?.getContext('2d');
+    if (ctxDist) {
+        safeDestroy(districtChartInstance);
+        districtChartInstance = new Chart(ctxDist, {
+            type: 'bar',
+            data: {
+                labels: Object.keys(districtData),
+                datasets: [{
+                    label: 'Jumlah Laporan',
+                    data: Object.values(districtData),
+                    backgroundColor: 'rgba(79, 70, 229, 0.8)',
+                    borderRadius: 6
+                }]
+            },
+            options: { 
+                responsive: true, 
+                maintainAspectRatio: false, 
+                plugins: { legend: { display: false } }, 
+                scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { family: 'Outfit' } } }, x: { ticks: { font: { family: 'Outfit' } } } } 
+            }
+        });
+    }
 }

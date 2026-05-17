@@ -12,6 +12,11 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+    <!-- Leaflet MarkerCluster -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js"></script>
+
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
@@ -103,6 +108,37 @@
                     </div>
                 </div>
 
+                <!-- Filter & Search Section -->
+                <div class="filter-container stat-card" style="margin-bottom: 24px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 16px 24px;">
+                    <div style="flex: 1; min-width: 250px;">
+                        <input type="text" id="filter-search" placeholder="🔍 Cari deskripsi, alamat, atau kecamatan..." class="status-select" style="width: 100%; border: 1px solid var(--border-glass);">
+                    </div>
+                    <select id="filter-status" class="status-select">
+                        <option value="all">Semua Status</option>
+                        <option value="pending">Menunggu</option>
+                        <option value="inProgress">Sedang Diperbaiki</option>
+                        <option value="resolved">Selesai</option>
+                        <option value="rejected">Ditolak</option>
+                    </select>
+                    <select id="filter-severity" class="status-select">
+                        <option value="all">Semua Keparahan</option>
+                        <option value="Sangat Baik">Sangat Baik</option>
+                        <option value="Kerusakan Ringan">Ringan</option>
+                        <option value="Kerusakan Sedang">Sedang</option>
+                        <option value="Kerusakan Berat">Berat</option>
+                        <option value="Kerusakan Sangat Parah">Sangat Parah</option>
+                    </select>
+                    <select id="filter-category" class="status-select">
+                        <option value="all">Semua Kategori</option>
+                        <option value="jalan">Jalan</option>
+                        <option value="jembatan">Jembatan</option>
+                        <option value="drainase">Drainase</option>
+                        <option value="fasilitas_umum">Fasilitas Umum</option>
+                        <option value="lampu_jalan">Lampu Jalan</option>
+                    </select>
+                    <input type="date" id="filter-date" class="status-select" title="Filter Tanggal">
+                </div>
+
                 <div class="reports-grid" id="reports-container">
                     <!-- Cards will be injected here via JS -->
                     <div class="loading-state">Mengambil data dari server...</div>
@@ -125,8 +161,39 @@
                     </select>
                 </div>
 
-                <div class="stat-card" style="margin-bottom: 24px;">
-                    <canvas id="recap-chart" height="80"></canvas>
+                <!-- Chart Grid -->
+                <div class="chart-grid">
+                    <!-- Trend Laporan -->
+                    <div class="stat-card chart-card-wide">
+                        <h3 class="chart-title">Trend Laporan Masuk</h3>
+                        <div class="chart-container-large">
+                            <canvas id="recap-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Severity Pie Chart -->
+                    <div class="stat-card">
+                        <h3 class="chart-title">Distribusi Keparahan</h3>
+                        <div class="chart-container-pie">
+                            <canvas id="severity-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Kategori Laporan -->
+                    <div class="stat-card">
+                        <h3 class="chart-title">Laporan per Kategori</h3>
+                        <div class="chart-container-pie">
+                            <canvas id="category-chart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Laporan per Kecamatan -->
+                    <div class="stat-card chart-card-wide">
+                        <h3 class="chart-title">Distribusi per Kecamatan</h3>
+                        <div class="chart-container-large">
+                            <canvas id="district-chart"></canvas>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="stat-card" style="padding: 0; overflow: hidden;">
@@ -176,10 +243,50 @@
         </main>
     </div>
 
-    <!-- Modal for viewing Image -->
-    <div id="image-modal" class="modal">
-        <span class="close-modal">&times;</span>
-        <img class="modal-content" id="modal-img">
+    <!-- Modal Detail Laporan -->
+    <div id="report-modal" class="modal">
+        <div class="premium-modal">
+            <span class="close-modal" onclick="document.getElementById('report-modal').style.display='none'">&times;</span>
+            <div class="modal-grid">
+                <!-- Kolom Kiri: Gambar -->
+                <div class="modal-image-col">
+                    <img id="modal-img" src="" alt="Foto Laporan">
+                    <div class="ai-overlay">
+                        <span id="modal-ai-confidence">Confidence AI: 0%</span>
+                    </div>
+                </div>
+                <!-- Kolom Kanan: Info -->
+                <div class="modal-info-col">
+                    <h2 id="modal-title" style="margin-top:0">Detail Laporan</h2>
+                    
+                    <div class="detail-section">
+                        <h4>Lokasi & Waktu</h4>
+                        <p>📍 <span id="modal-gps">Lokasi GPS</span></p>
+                        <p>🕒 <span id="modal-date">Tanggal</span></p>
+                    </div>
+
+                    <div class="detail-section">
+                        <h4>Sistem Deteksi AI & Duplikasi</h4>
+                        <div style="display:flex; gap: 8px; flex-wrap:wrap; margin-top:8px;">
+                            <span class="badge" id="modal-duplicate-status" style="background:#475569">Pengecekan Duplikat...</span>
+                            <span class="badge" id="modal-similarity" style="background:var(--primary)">Similarity: -</span>
+                        </div>
+                    </div>
+
+                    <div class="detail-section">
+                        <h4>Metadata EXIF (Keaslian Foto)</h4>
+                        <p id="modal-exif" style="font-family: monospace; font-size: 0.8rem; background:rgba(0,0,0,0.05); padding:8px; border-radius:4px;">Memuat metadata...</p>
+                    </div>
+
+                    <div class="detail-section">
+                        <h4>Histori Status</h4>
+                        <div class="status-timeline" id="modal-history">
+                            <!-- Injected by JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>
