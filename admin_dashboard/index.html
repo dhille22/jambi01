@@ -12,6 +12,9 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,7 +23,44 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="dashboard">
+    <!-- Auth Section -->
+    <div id="auth-view" class="auth-wrapper">
+        <div class="auth-card">
+            <div class="auth-header">
+                <h2>Admin Lapor Jambi</h2>
+                <p>Silakan masuk untuk mengelola sistem</p>
+            </div>
+            <div class="auth-tabs">
+                <button class="auth-tab active" id="tab-login" onclick="switchAuthTab('login')">Login</button>
+                <button class="auth-tab" id="tab-register" onclick="switchAuthTab('register')">Register</button>
+            </div>
+            
+            <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
+                <div class="input-group">
+                    <input type="email" id="login-email" placeholder="Email Admin" required>
+                </div>
+                <div class="input-group">
+                    <input type="password" id="login-password" placeholder="Password" required>
+                </div>
+                <button type="submit" class="btn-primary" id="btn-login-submit">Masuk</button>
+                <p id="login-error" class="auth-error"></p>
+            </form>
+
+            <form id="register-form" class="auth-form" onsubmit="handleRegister(event)">
+                <div class="input-group">
+                    <input type="email" id="register-email" placeholder="Email Baru" required>
+                </div>
+                <div class="input-group">
+                    <input type="password" id="register-password" placeholder="Password (min 6 char)" required>
+                </div>
+                <button type="submit" class="btn-primary" id="btn-register-submit">Daftar Admin</button>
+                <p id="register-error" class="auth-error"></p>
+            </form>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div class="dashboard" id="dashboard-layout" style="display: none;">
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-header">
@@ -30,6 +70,8 @@
             <nav class="nav-links">
                 <a href="#" class="active" id="nav-reports">📝 Daftar Laporan</a>
                 <a href="#" id="nav-map">🗺️ Peta Kota Jambi</a>
+                <a href="#" id="nav-recap">📊 Rekap Laporan</a>
+                <a href="#" id="nav-profile">👤 Profil Admin</a>
             </nav>
             <div class="sidebar-footer">
                 <p>Status: <span class="status-indicator online"></span> Online</p>
@@ -39,7 +81,7 @@
         <!-- Main Content -->
         <main class="main-content">
             <header class="top-header">
-                <h1>Kelola Laporan Masyarakat</h1>
+                <h1 id="page-title">Kelola Laporan Masyarakat</h1>
                 <div class="header-actions">
                     <button id="refresh-btn" class="btn-glass">🔄 Refresh Data</button>
                 </div>
@@ -69,6 +111,67 @@
 
             <div id="map-view" class="view-section">
                 <div class="map-container" id="admin-map"></div>
+            </div>
+
+            <!-- Recap View -->
+            <div id="recap-view" class="view-section">
+                <div class="top-header" style="margin-bottom: 24px;">
+                    <h2>Rekapitulasi Laporan Masuk</h2>
+                    <select id="recap-filter" class="status-select" style="max-width: 200px;" onchange="updateRecap()">
+                        <option value="daily">Harian</option>
+                        <option value="weekly">Mingguan</option>
+                        <option value="monthly" selected>Bulanan</option>
+                        <option value="yearly">Tahunan</option>
+                    </select>
+                </div>
+
+                <div class="stat-card" style="margin-bottom: 24px;">
+                    <canvas id="recap-chart" height="80"></canvas>
+                </div>
+
+                <div class="stat-card" style="padding: 0; overflow: hidden;">
+                    <div style="padding: 24px; border-bottom: 1px solid var(--border-glass);">
+                        <h3 style="color: var(--text-dark); margin:0;">Tabel Detail Laporan</h3>
+                    </div>
+                    <div style="overflow-x: auto;">
+                        <table class="premium-table" id="recap-table">
+                            <thead>
+                                <tr>
+                                    <th>Periode Waktu</th>
+                                    <th>Total Laporan</th>
+                                    <th>Selesai</th>
+                                    <th>Pending</th>
+                                    <th>Ditolak</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Data akan diinjeksi via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Profile View -->
+            <div id="profile-view" class="view-section">
+                <div class="profile-card">
+                    <div class="profile-header-bg"></div>
+                    <div class="profile-avatar">👤</div>
+                    <div class="profile-info">
+                        <h3>Informasi Akun Admin</h3>
+                        <div class="profile-detail">
+                            <span class="detail-label">Email Terdaftar</span>
+                            <span class="detail-value" id="profile-email">Memuat...</span>
+                        </div>
+                        <div class="profile-detail">
+                            <span class="detail-label">Role Akses</span>
+                            <span class="detail-value"><span class="status-badge completed" style="margin:0">Administrator</span></span>
+                        </div>
+                    </div>
+                    <div class="profile-actions">
+                        <button id="logout-btn" class="btn-danger" onclick="handleLogout()">Keluar dari Sistem (Logout)</button>
+                    </div>
+                </div>
             </div>
         </main>
     </div>

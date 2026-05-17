@@ -12,8 +12,14 @@ let markers = [];
 // DOM Elements
 const navReports = document.getElementById('nav-reports');
 const navMap = document.getElementById('nav-map');
+const navProfile = document.getElementById('nav-profile');
+const navRecap = document.getElementById('nav-recap');
 const viewReports = document.getElementById('reports-view');
 const viewMap = document.getElementById('map-view');
+const viewProfile = document.getElementById('profile-view');
+const viewRecap = document.getElementById('recap-view');
+const authView = document.getElementById('auth-view');
+const dashboardLayout = document.getElementById('dashboard-layout');
 const btnRefresh = document.getElementById('refresh-btn');
 const reportsContainer = document.getElementById('reports-container');
 
@@ -33,37 +39,72 @@ const closeBtn = document.getElementsByClassName('close-modal')[0];
 async function init() {
     setupNavigation();
     setupModal();
-    await fetchReports();
+    
+    // Auth Check
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (session) {
+        showDashboard(session.user);
+    } else {
+        showAuth();
+    }
+    
+    // Listen to Auth Changes
+    supabaseClient.auth.onAuthStateChange((event, session) => {
+        if (session) {
+            showDashboard(session.user);
+        } else {
+            showAuth();
+        }
+    });
+}
+
+function showDashboard(user) {
+    if(authView) authView.style.display = 'none';
+    if(dashboardLayout) dashboardLayout.style.display = 'flex';
+    const profileEmail = document.getElementById('profile-email');
+    if(profileEmail) profileEmail.innerText = user.email;
+    fetchReports();
+}
+
+function showAuth() {
+    if(dashboardLayout) dashboardLayout.style.display = 'none';
+    if(authView) authView.style.display = 'flex';
 }
 
 // Navigasi
 function setupNavigation() {
-    navReports.addEventListener('click', (e) => {
-        e.preventDefault();
-        navReports.classList.add('active');
-        navMap.classList.remove('active');
-        viewReports.classList.add('active');
-        viewMap.classList.remove('active');
+    const views = [
+        { nav: navReports, view: viewReports },
+        { nav: navMap, view: viewMap },
+        { nav: navProfile, view: viewProfile },
+        { nav: navRecap, view: viewRecap }
+    ];
+
+    views.forEach(item => {
+        if (!item.nav) return;
+        item.nav.addEventListener('click', (e) => {
+            e.preventDefault();
+            // Reset all
+            views.forEach(v => {
+                if(v.nav) v.nav.classList.remove('active');
+                if(v.view) v.view.classList.remove('active');
+            });
+            // Set active
+            item.nav.classList.add('active');
+            if(item.view) item.view.classList.add('active');
+            
+            if (item.nav === navMap) {
+                if (!map) initMap();
+                else map.invalidateSize();
+            }
+        });
     });
 
-    navMap.addEventListener('click', (e) => {
-        e.preventDefault();
-        navMap.classList.add('active');
-        navReports.classList.remove('active');
-        viewMap.classList.add('active');
-        viewReports.classList.remove('active');
-        
-        // Inisialisasi peta jika belum ada
-        if (!map) {
-            initMap();
-        } else {
-            map.invalidateSize(); // Perbaiki ukuran peta saat ditab
-        }
-    });
-
-    btnRefresh.addEventListener('click', () => {
-        fetchReports();
-    });
+    if (btnRefresh) {
+        btnRefresh.addEventListener('click', () => {
+            fetchReports();
+        });
+    }
 }
 
 // Modal Gambar
@@ -114,6 +155,11 @@ function updateStats() {
     document.getElementById('stat-total').innerText = total;
     document.getElementById('stat-pending').innerText = pending;
     document.getElementById('stat-completed').innerText = completed;
+    
+    // Perbarui rekapitulasi data (Tabel & Grafik)
+    if (typeof updateRecap === 'function') {
+        updateRecap();
+    }
 }
 
 // Render Kartu Laporan
@@ -256,13 +302,74 @@ async function deleteReport(id) {
 // Inisialisasi Peta (Leaflet)
 function initMap() {
     // Pusat peta di Kota Jambi
-    map = L.map('admin-map').setView([-1.6101, 103.6131], 13);
+    map = L.map('admin-map').setView([-1.6101, 103.6131], 12);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://carto.com/">CARTO</a>'
-    }).addTo(map);
+    // Definisi berbagai jenis layer peta (Google Maps & Google Earth)
+    const googleStreets = L.tileLayer('https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}', {
+        maxZoom: 20,
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+        attribution: '&copy; Google Maps'
+    });
+
+    const googleSatellite = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
+        maxZoom: 20,
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+        attribution: '&copy; Google Earth'
+    });
+
+    const googleHybrid = L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', {
+        maxZoom: 20,
+        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+        attribution: '&copy; Google Hybrid'
+    });
+
+    // Default layer saat pertama kali dibuka
+    googleHybrid.addTo(map);
+
+    // Kontrol UI untuk berpindah gaya peta (Layer Control)
+    const baseMaps = {
+        "Google Maps (Jalan)": googleStreets,
+        "Google Earth (Satelit)": googleSatellite,
+        "Google Hybrid (Satelit + Label)": googleHybrid
+    };
+
+    // Tambahkan tombol pengontrol layer di sudut kanan atas
+    L.control.layers(baseMaps, null, { position: 'topright' }).addTo(map);
+
+    // Ambil dan gambar batas wilayah Kota Jambi
+    fetchBoundary();
 
     updateMapMarkers();
+}
+
+async function fetchBoundary() {
+    try {
+        const response = await fetch('https://nominatim.openstreetmap.org/search.php?q=Kota+Jambi+Indonesia&polygon_geojson=1&format=json');
+        const data = await response.json();
+        
+        if (data && data.length > 0) {
+            // Cari data area administratif
+            const boundaryData = data.find(item => item.class === 'boundary' && item.type === 'administrative') || data[0];
+            
+            if (boundaryData.geojson) {
+                const jambiBoundary = L.geoJSON(boundaryData.geojson, {
+                    style: {
+                        color: '#4f46e5',
+                        weight: 3,
+                        opacity: 0.8,
+                        fillColor: '#4f46e5',
+                        fillOpacity: 0.05,
+                        dashArray: '8, 8' // Border putus-putus elegan
+                    }
+                }).addTo(map);
+                
+                // Paskan peta agar batas wilayah terlihat semua
+                map.fitBounds(jambiBoundary.getBounds());
+            }
+        }
+    } catch (err) {
+        console.error("Gagal memuat batas wilayah:", err);
+    }
 }
 
 function updateMapMarkers() {
@@ -302,5 +409,177 @@ function updateMapMarkers() {
     });
 }
 
+// Auth Functions
+function switchAuthTab(tab) {
+    document.getElementById('tab-login').classList.remove('active');
+    document.getElementById('tab-register').classList.remove('active');
+    document.getElementById('login-form').classList.remove('active');
+    document.getElementById('register-form').classList.remove('active');
+    
+    document.getElementById(`tab-${tab}`).classList.add('active');
+    document.getElementById(`${tab}-form`).classList.add('active');
+}
+
+async function handleLogin(e) {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+    const errorEl = document.getElementById('login-error');
+    const btn = document.getElementById('btn-login-submit');
+    
+    errorEl.innerText = '';
+    btn.innerText = 'Loading...';
+    btn.disabled = true;
+    
+    try {
+        const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        // onAuthStateChange will handle redirect
+    } catch (error) {
+        errorEl.innerText = error.message;
+    } finally {
+        btn.innerText = 'Masuk';
+        btn.disabled = false;
+    }
+}
+
+async function handleRegister(e) {
+    e.preventDefault();
+    const email = document.getElementById('register-email').value;
+    const password = document.getElementById('register-password').value;
+    const errorEl = document.getElementById('register-error');
+    const btn = document.getElementById('btn-register-submit');
+    
+    errorEl.innerText = '';
+    btn.innerText = 'Loading...';
+    btn.disabled = true;
+    
+    try {
+        const { error } = await supabaseClient.auth.signUp({ email, password });
+        if (error) throw error;
+        alert('Registrasi berhasil! Anda sekarang sudah masuk.');
+        // onAuthStateChange handles redirecting to dashboard.
+    } catch (error) {
+        errorEl.innerText = error.message;
+    } finally {
+        btn.innerText = 'Daftar Admin';
+        btn.disabled = false;
+    }
+}
+
+async function handleLogout() {
+    if(confirm('Yakin ingin keluar?')) {
+        await supabaseClient.auth.signOut();
+    }
+}
+
 // Jalankan
 document.addEventListener('DOMContentLoaded', init);
+
+// Rekapitulasi & Chart.js Logic
+let recapChartInstance = null;
+
+function updateRecap() {
+    const filter = document.getElementById('recap-filter');
+    if (!filter) return;
+    const filterValue = filter.value;
+    const tableBody = document.querySelector('#recap-table tbody');
+    if (!tableBody) return;
+    
+    const groupedData = {};
+    
+    // reports sudah diurutkan dari yang terbaru (karena order('created_at', { ascending: false }))
+    reports.forEach(r => {
+        const date = new Date(r.created_at);
+        let key = '';
+        
+        if (filterValue === 'daily') {
+            key = date.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }); 
+        } else if (filterValue === 'weekly') {
+            const first = date.getDate() - date.getDay() + 1;
+            const firstDay = new Date(new Date(date).setDate(first));
+            key = 'Mg ' + firstDay.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+        } else if (filterValue === 'monthly') {
+            const months = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Ags','Sep','Okt','Nov','Des'];
+            key = months[date.getMonth()] + ' ' + date.getFullYear();
+        } else if (filterValue === 'yearly') {
+            key = date.getFullYear().toString();
+        }
+        
+        if (!groupedData[key]) {
+            groupedData[key] = { total: 0, resolved: 0, pending: 0, rejected: 0 };
+        }
+        
+        groupedData[key].total++;
+        if (r.status === 'resolved') groupedData[key].resolved++;
+        else if (r.status === 'rejected') groupedData[key].rejected++;
+        else groupedData[key].pending++;
+    });
+    
+    const keys = Object.keys(groupedData); 
+    
+    // Update Tabel
+    tableBody.innerHTML = '';
+    keys.forEach(k => {
+        const d = groupedData[k];
+        const row = document.createElement('tr');
+        row.innerHTML = `
+            <td><strong>${k}</strong></td>
+            <td>${d.total}</td>
+            <td style="color:var(--success); font-weight:800;">${d.resolved}</td>
+            <td style="color:var(--warning); font-weight:800;">${d.pending}</td>
+            <td style="color:var(--danger); font-weight:800;">${d.rejected}</td>
+        `;
+        tableBody.appendChild(row);
+    });
+    
+    // Update Chart (balik arah agar yang terlama di kiri, terbaru di kanan)
+    const chartLabels = [...keys].reverse();
+    const dataTotal = chartLabels.map(k => groupedData[k].total);
+    const dataResolved = chartLabels.map(k => groupedData[k].resolved);
+    
+    const canvas = document.getElementById('recap-chart');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    
+    if (recapChartInstance) {
+        recapChartInstance.destroy();
+    }
+    
+    recapChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: chartLabels,
+            datasets: [
+                {
+                    label: 'Total Laporan',
+                    data: dataTotal,
+                    borderColor: '#4f46e5',
+                    backgroundColor: 'rgba(79, 70, 229, 0.1)',
+                    borderWidth: 3,
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Selesai',
+                    data: dataResolved,
+                    borderColor: '#10b981',
+                    backgroundColor: 'transparent',
+                    borderWidth: 3,
+                    tension: 0.4,
+                    borderDash: [5, 5]
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: { 
+                legend: { position: 'top', labels: { font: { family: 'Outfit', weight: 'bold' } } }
+            },
+            scales: { 
+                y: { beginAtZero: true, ticks: { stepSize: 1, font: { family: 'Outfit' } } },
+                x: { ticks: { font: { family: 'Outfit', weight: '600' } } }
+            }
+        }
+    });
+}
