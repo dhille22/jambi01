@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/report_providers.dart';
 import '../providers/statistics_providers.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_view.dart';
@@ -15,7 +16,10 @@ class StatisticsPage extends ConsumerWidget {
 
     return statistics.when(
       loading: () => const LoadingView(message: 'Menghitung statistik...'),
-      error: (error, _) => ErrorView(message: 'Gagal memuat statistik: $error'),
+      error: (error, _) => ErrorView(
+        message: 'Gagal memuat statistik: $error',
+        onRetry: () => ref.invalidate(reportsStreamProvider),
+      ),
       data: (value) {
         final maxCount = value.byCategory.values.fold<int>(
           1,

@@ -12,18 +12,20 @@ import '../services/report_service.dart';
 import '../services/image_classification_service.dart';
 import '../services/storage_service.dart';
 import '../utils/severity_utils.dart';
+import 'auth_providers.dart';
 import 'service_providers.dart';
 
 final reportsStreamProvider = StreamProvider<List<ReportModel>>((ref) {
+  ref.watch(authStateProvider); // Rebuild stream if auth state (like token) changes
   return ref.watch(reportServiceProvider).watchReports();
 });
 
 final userReportsStreamProvider = StreamProvider<List<ReportModel>>((ref) {
-  final userId = ref.watch(authServiceProvider).currentUser?.id;
-  if (userId == null) {
+  final user = ref.watch(authStateProvider).value;
+  if (user == null) {
     return Stream.value(const <ReportModel>[]);
   }
-  return ref.watch(reportServiceProvider).watchUserReports(userId);
+  return ref.watch(reportServiceProvider).watchUserReports(user.id);
 });
 
 final currentLocationProvider = FutureProvider<loc.LocationData>((ref) {

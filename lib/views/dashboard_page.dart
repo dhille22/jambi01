@@ -23,7 +23,10 @@ class DashboardPage extends ConsumerWidget {
 
     return reports.when(
       loading: () => const LoadingView(),
-      error: (error, _) => ErrorView(message: 'Gagal memuat peta: $error'),
+      error: (error, _) => ErrorView(
+        message: 'Gagal memuat peta: $error',
+        onRetry: () => ref.invalidate(reportsStreamProvider),
+      ),
       data: (items) {
         final current = location.asData?.value;
         final hasCurrentLocation =

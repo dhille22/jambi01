@@ -21,7 +21,10 @@ class ReportHistoryPage extends ConsumerWidget {
 
     return reports.when(
       loading: () => const LoadingView(message: 'Memuat riwayat...'),
-      error: (error, _) => ErrorView(message: 'Gagal memuat riwayat: $error'),
+      error: (error, _) => ErrorView(
+        message: 'Gagal memuat riwayat: $error',
+        onRetry: () => ref.invalidate(userReportsStreamProvider),
+      ),
       data: (items) {
         if (items.isEmpty) {
           return const Center(child: Text('Belum ada laporan.'));
